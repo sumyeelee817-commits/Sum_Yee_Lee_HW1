@@ -49,70 +49,56 @@ struct MyApp : public App {
     }
 
     void onAnimate(double dt) override {
-        if (N != lastN) {
-            lastN = N;
-            reset(N);
+    if (N != lastN) {
+        lastN = N;
+        reset(N);
+    }
+
+    for (int i = 0; i < agents.size(); i++) {
+        auto& me = agents[i];
+        auto& love = agents[me.loveIndex];
+        
+        // 1. CHASING LOGIC
+        float distToLove = (love.pos() - me.pos()).mag();
+        if (distToLove > 0.2) {
+            me.faceToward(love.pos(), 0.3); 
         }
 
-        for (int i = 0; i < agents.size(); i++) {
-            auto& me = agents[i];
-            auto& love = agents[me.loveIndex];
-            
-            // 1. CHASING LOGIC
-            // We only steer if we are a safe distance away to prevent the "spinning glitch"
-            float distToLove = (love.pos() - me.pos()).mag();
-            if (distToLove > 0.2) {
-                me.faceToward(love.pos(), 0.3); 
-            }
+        // 2. SOFT BOUNDARY
+        float distFromCenter = me.pos().mag();
+        if (distFromCenter > 7.0) {
+            Vec3d toCenter = -me.pos();
+            toCenter.normalize();
+            me.pos() += toCenter * 0.05; 
+        }
 
-            // 2. THE "SOFT BOUNDARY" (Instead of friction)
-            // If the agent wanders too far from the center, we forcefully 
-            // steer it back. This keeps them all in a "bubble" around (0,0,0).
-            float distFromCenter = me.pos().mag();
-            if (distFromCenter > 7.0) {
-                Vec3d toCenter = -me.pos();
-                toCenter.normalize();
-                // We nudge the position directly back toward the center
-                me.pos() += toCenter * 0.05; 
-            }
-
-            // 3. SEPARATION (Personal Space)
-            // --- TASK: MAINTAIN DISTANCE (Separation) ---
-            Vec3d nudgeAway;
-            int neighborCount = 0;
+        // 3. SEPARATION (Scope fixed here)
+        Vec3d nudgeAway; // Declared here
+        int neighborCount = 0;
 
         for (int j = 0; j < agents.size(); j++) {
-            if (i == j) continue; // Don't check against yourself
+            if (i == j) continue; 
 
-            // 1. Find distance to the other agent
             Vec3d diff = me.pos() - agents[j].pos();
             float dist = diff.mag();
-
-            // 2. Threshold Check (The "Too Close" zone)
-            // Adjust this value (e.g., 0.4 to 1.0) to change their personal space
             float threshold = 0.6; 
 
             if (dist < threshold && dist > 0.0001) {
-                // 3. Calculate Nudge: The closer they are, the harder we push away
-                // Normalizing 'diff' gives us the direction away from the neighbor
                 nudgeAway += (diff / dist) * (threshold - dist);
                 neighborCount++;
             }
+        } // End of neighbor loop (j)
+
+        // Now we apply it while still inside the agent loop (i)
+        if (neighborCount > 0) {
+            me.pos() += nudgeAway * 0.2; 
         }
 
-        // 4. Apply the nudge to the position
-        // The 0.2 is the "strength" of the personal space boundary
-        if (neighborCount > 0) {
-            me.pos() += nudgeAway * 0.2;
-        }
-            // 4. FORWARD MOVEMENT
-        
-        me.moveF(0.8); 
-            
-            // Apply the physics step
-        me.step(dt);
-        }
-    }
+        // 4. FORWARD MOVEMENT
+    me.moveF(0.8); 
+    me.step(dt);
+    } // End of agent loop (i)
+}
      void onCreate() override {
         addCone(mesh);
         mesh.scale(1, 0.2, 1);
