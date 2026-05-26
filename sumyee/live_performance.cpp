@@ -325,7 +325,7 @@ struct AlloApp : DistributedAppWithState<WorldState> {
 
 int main() {
   AlloApp app;
-  app.dimensions(800, 600);
+  app.dimensions(600, 400);
   app.configureAudio(48000, 512, 2, 0);
   app.start();
 }
