@@ -10,6 +10,19 @@
 #include "al_ext/statedistribution/al_CuttleboneStateSimulationDomain.hpp"
 #include <fstream>
 #include <iostream>
+#include <vector>
+#include <fstream>
+#include <sstream>
+
+// The blueprint for a single "frame" of your performance
+struct FrameData {
+    double time;
+    int scene;
+    al::Vec3d pos;
+    al::Quatd quat;
+    // Your GUI Parameters
+    float speed, waterdepth, phase, dragMult, weight, rayMarch, normal;
+};
 
 using namespace al;
 
@@ -48,6 +61,13 @@ struct AlloApp : DistributedAppWithState<WorldState> {
   Parameter phase{"phase", "", 6.0, 0.0, 20.0};
   Parameter dragMult{"dragMult", "", 0.048, 0.0, 0.2};
 
+  // --- FLIGHT RECORDER VARIABLES ---
+  std::vector<FrameData> flightPath;
+  bool isRecording = false;
+  bool isPlaying = false;
+  double performanceStartTime = 0.0;
+  size_t playbackIndex = 0;
+
   void checkGLError(const std::string& location) {
       GLenum err;
       while((err = glGetError()) != GL_NO_ERROR) {
@@ -71,6 +91,40 @@ struct AlloApp : DistributedAppWithState<WorldState> {
     }
     std::cerr << ">>> FATAL ERROR: Could not find " << fragFileName << std::endl;
     return false;
+  }
+
+  void saveFlightPath() {
+      std::ofstream file("performance_data.txt");
+      for (auto& frame : flightPath) {
+          file << frame.time << " " << frame.scene << " "
+               << frame.pos.x << " " << frame.pos.y << " " << frame.pos.z << " "
+               << frame.quat.w << " " << frame.quat.x << " " << frame.quat.y << " " << frame.quat.z << " "
+               << frame.speed << " " << frame.waterdepth << " " << frame.phase << " "
+               << frame.dragMult << " " << frame.weight << " " << frame.rayMarch << " " << frame.normal << "\n";
+      }
+      std::cout << ">>> Saved " << flightPath.size() << " frames to performance_data.txt\n";
+  }
+
+  void loadFlightPath() {
+      flightPath.clear();
+      std::ifstream file("performance_data.txt");
+      if (!file.is_open()) {
+          std::cout << ">>> ERROR: Could not find performance_data.txt\n";
+          return;
+      }
+      std::string line;
+      while (std::getline(file, line)) {
+          std::istringstream iss(line);
+          FrameData f;
+          if (iss >> f.time >> f.scene 
+                  >> f.pos.x >> f.pos.y >> f.pos.z 
+                  >> f.quat.w >> f.quat.x >> f.quat.y >> f.quat.z
+                  >> f.speed >> f.waterdepth >> f.phase 
+                  >> f.dragMult >> f.weight >> f.rayMarch >> f.normal) {
+              flightPath.push_back(f);
+          }
+      }
+      std::cout << ">>> Loaded " << flightPath.size() << " frames!\n";
   }
 
   void onInit() override {
@@ -137,29 +191,71 @@ struct AlloApp : DistributedAppWithState<WorldState> {
     if(isPrimary()) {
       state().time += dt;
 
-      // 1. Calculate how far the keyboard (Arrow keys + WASD) tried to move you
-      al::Vec3d frameMovement = nav().pos() - prevPos;
-      
-      // 2. Define different speeds for different axes
-      // Adjust these values: 0.1 is 10% speed, 0.05 is 5% speed.
-      double xSpeed = 0.1; 
-      double ySpeed = 0.05; // Making Y-axis (Up/Down) even slower/smoother
-      double zSpeed = 0.1; 
-      
-      // 3. Apply the speed multiplier per axis
-      nav().pos() = prevPos + al::Vec3d(
-          frameMovement.x * xSpeed, 
-          frameMovement.y * ySpeed, 
-          frameMovement.z * zSpeed
-      );
+      if (isPlaying && flightPath.size() > 0) {
+          // --- PLAYBACK MODE ---
+          double currentTime = state().time - performanceStartTime;
+          
+          // Fast-forward to the current frame based on time
+          while (playbackIndex < flightPath.size() - 1 && flightPath[playbackIndex + 1].time < currentTime) {
+              playbackIndex++;
+          }
+          
+          // Force the system state to match the recorded frame
+          FrameData f = flightPath[playbackIndex];
+          nav().pos() = f.pos;
+          nav().quat() = f.quat;
+          
+          if (state().currentScene != f.scene) {
+              state().currentScene = f.scene;
+              state().sceneStartTime = state().time; // Reset shader clock for the new scene
+          }
+          
+          speed.set(f.speed);
+          waterdepth.set(f.waterdepth);
+          phase.set(f.phase);
+          dragMult.set(f.dragMult);
+          weight.set(f.weight);
+          RayMarch.set(f.rayMarch);
+          Normal.set(f.normal);
+          
+          if (playbackIndex >= flightPath.size() - 1) {
+              isPlaying = false;
+              std::cout << ">>> Playback Finished!\n";
+          }
+      } else {
+          // --- LIVE CONTROL & RECORDING MODE ---
+          al::Vec3d frameMovement = nav().pos() - prevPos;
+          double xSpeed = 0.1; 
+          double ySpeed = 0.05; 
+          double zSpeed = 0.1; 
+          
+          nav().pos() = prevPos + al::Vec3d(
+              frameMovement.x * xSpeed, 
+              frameMovement.y * ySpeed, 
+              frameMovement.z * zSpeed
+          );
+          prevPos = nav().pos();
 
-      // 4. Save the final position into memory
-      prevPos = nav().pos();
+          double lookSpeed = 0.25; 
+          nav().spin() *= lookSpeed;
+          nav().step(dt);
 
-      double lookSpeed = 0.25; // <--- Lower this number to make the arrow keys even slower (e.g., 0.05)
-      nav().spin() *= lookSpeed;  // Scales down Pitch (Up/Down Arrow) and Yaw (Left/Right Arrow)
-      nav().step(dt);
-
+          if (isRecording) {
+              FrameData f;
+              f.time = state().time - performanceStartTime; // Store relative time starting from 0.0
+              f.scene = state().currentScene;
+              f.pos = nav().pos();
+              f.quat = nav().quat();
+              f.speed = speed.get();
+              f.waterdepth = waterdepth.get();
+              f.phase = phase.get();
+              f.dragMult = dragMult.get();
+              f.weight = weight.get();
+              f.rayMarch = RayMarch.get();
+              f.normal = Normal.get();
+              flightPath.push_back(f);
+          }
+      }
       camera.set(nav());
     } else {
       nav().set(camera.get());
@@ -173,7 +269,35 @@ struct AlloApp : DistributedAppWithState<WorldState> {
         std::cout << "nav().pos(" << nav().pos().x << ", " << nav().pos().y << ", " << nav().pos().z << ");" << std::endl;
         std::cout << "nav().quat() = al::Quatd(" << nav().quat().w << ", " << nav().quat().x << ", " << nav().quat().y << ", " << nav().quat().z << ");" << std::endl;
     }
+    // Press 'r' to start/stop recording
+    if (k.key() == 'r') {
+        if (!isRecording) {
+            std::cout << "\n>>> RECORDING STARTED...\n";
+            flightPath.clear();
+            performanceStartTime = state().time;
+            isRecording = true;
+            isPlaying = false;
+            player.pos(0);
+        } else {
+            isRecording = false;
+            std::cout << ">>> RECORDING STOPPED.\n";
+            saveFlightPath(); // Automatically writes the file
+        }
+    }
     
+    // Press 'l' to load the file and play it back
+    if (k.key() == 'l') {
+        loadFlightPath();
+        if (flightPath.size() > 0) {
+            isPlaying = true;
+            isRecording = false;
+            performanceStartTime = state().time;
+            playbackIndex = 0;
+            std::cout << "\n>>> PLAYBACK STARTED...\n";
+            player.pos(0);
+        }
+    }
+
     if (k.key() == '9') {
         if(isPrimary()) {
             // ---> CHANGED TO % 5: Now cycles through 0, 1, 2, 3, 4, then back to 0!
@@ -208,9 +332,17 @@ struct AlloApp : DistributedAppWithState<WorldState> {
     while (io()) {
       float left = player.read(0);
       float right = player(1); 
-      io.out(0) = left; 
-      io.out(34) = right;
-      io.out(55) = (right + left) / 2.0f;
+
+      if (io.channelsOut() > 0) io.out(0) = left;
+      if (io.channelsOut() > 1) io.out(1) = right; 
+
+      // Safe routing for the AlloSphere (Only writes if channels 34 and 55 exist)
+      if (io.channelsOut() > 34) io.out(34) = right;
+      if (io.channelsOut() > 55) io.out(55) = (right + left) / 2.0f;
+
+      //io.out(0) = left; 
+      //io.out(34) = right;
+      //io.out(55) = (right + left) / 2.0f;
     }
   }
 
