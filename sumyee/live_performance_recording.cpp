@@ -13,6 +13,7 @@
 #include <vector>
 #include <fstream>
 #include <sstream>
+#include <sstream>
 
 // The blueprint for a single "frame" of your performance
 struct FrameData {
@@ -105,26 +106,57 @@ struct AlloApp : DistributedAppWithState<WorldState> {
       std::cout << ">>> Saved " << flightPath.size() << " frames to performance_data.txt\n";
   }
 
-  void loadFlightPath() {
-      flightPath.clear();
-      std::ifstream file("performance_data.txt");
+  // --- BULLETPROOF: Load flight path (Skips bad frames!) ---
+  void loadFlightPath(std::string filename = "performance_data.txt") {
+      std::ifstream file(filename);
       if (!file.is_open()) {
-          std::cout << ">>> ERROR: Could not find performance_data.txt\n";
+          std::cout << ">>> No existing flight path found at " << filename << " <<<" << std::endl;
           return;
       }
+      
+      flightPath.clear();
       std::string line;
+      int lineNumber = 0;
+      int skippedFrames = 0;
+      
+      // Read the file ONE line at a time
       while (std::getline(file, line)) {
-          std::istringstream iss(line);
-          FrameData f;
-          if (iss >> f.time >> f.scene 
-                  >> f.pos.x >> f.pos.y >> f.pos.z 
-                  >> f.quat.w >> f.quat.x >> f.quat.y >> f.quat.z
-                  >> f.speed >> f.waterdepth >> f.phase 
-                  >> f.dragMult >> f.weight >> f.rayMarch >> f.normal) {
-              flightPath.push_back(f);
+          lineNumber++;
+          std::stringstream ss(line); // Create a mini-stream just for this line
+          
+          double t;
+          int sc;
+          double px, py, pz, qw, qx, qy, qz;
+          float s, wd, ph, dm, w, rm, n;
+          
+          // Try to extract all 16 numbers from this specific line
+          if (ss >> t >> sc >> px >> py >> pz >> qw >> qx >> qy >> qz >> s >> wd >> ph >> dm >> w >> rm >> n) {
+              FrameData frame;
+              frame.time = t;
+              frame.scene = sc;
+              
+              // Fixed: Access pos and quat directly instead of using cameraPose
+              frame.pos = al::Vec3d(px, py, pz);
+              frame.quat = al::Quatd(qw, qx, qy, qz);
+              
+              frame.speed = s;
+              frame.waterdepth = wd;
+              frame.phase = ph;
+              frame.dragMult = dm;
+              frame.weight = w;
+              frame.rayMarch = rm;
+              frame.normal = n;
+              
+              flightPath.push_back(frame);
+          } else {
+              // If the math was corrupted (NaN) or missing, skip the frame and keep going!
+              skippedFrames++;
+              std::cerr << ">>> WARNING: Skipped corrupted frame at line " << lineNumber << " <<<" << std::endl;
           }
       }
-      std::cout << ">>> Loaded " << flightPath.size() << " frames!\n";
+      
+      file.close();
+      std::cout << ">>> SUCCESS: Loaded " << flightPath.size() << " frames. (Skipped " << skippedFrames << " bad frames) <<<" << std::endl;
   }
 
   void onInit() override {
