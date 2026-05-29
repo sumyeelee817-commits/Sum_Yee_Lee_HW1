@@ -15,6 +15,31 @@
 #include <sstream>
 #include <sstream>
 
+
+const char* errstr(int result) {
+switch(result) {
+case GL_INVALID_ENUM:         return "An unacceptable value is specified for an enumerated argument.  The offending command is ignored, and has no other side effect than to set the error flag.\n";
+case GL_INVALID_VALUE:        return "A numeric argument is out of range.  The offending command is ignored, and has no other side effect than to set the error flag.\n";
+case GL_INVALID_OPERATION:    return "The specified operation is not allowed in the current state.  The offending command is ignored, and has no other side effect than to set the error flag.\n";
+case GL_STACK_OVERFLOW:       return "This command would cause a stack overflow.  The offending command is ignored, and has no other side effect than to set the error flag.\n";
+case GL_STACK_UNDERFLOW:      return "This command would cause a stack underflow.  The offending command is ignored, and has no other side effect than to set the error flag.\n";
+case GL_OUT_OF_MEMORY:        return "There is not enough memory left to execute the command.  The state of the GL is undefined, except for the state of the error flags, after this error is recorded.\n";
+//case GL_TABLE_TOO_LARGE:      return "The specified table exceeds the implementation's maximum supported table size.  The offending command is ignored, and has no other side effect than to set the error flag.\n";
+default:
+}
+return "\n";
+}
+
+
+void glcheck() {
+  if (auto result = glGetError() != GL_NO_ERROR) {
+    printf("ERROR: %s", errstr(result));
+    fflush(stdout);
+    exit(1);
+  }
+}
+
+
 // The blueprint for a single "frame" of your performance
 struct FrameData {
     double time;
@@ -220,6 +245,8 @@ struct AlloApp : DistributedAppWithState<WorldState> {
   }
 
   void onAnimate(double dt) override {
+    //std::cout << state().currentScene << std::endl;
+
     if(isPrimary()) {
       state().time += dt;
 
@@ -431,8 +458,8 @@ struct AlloApp : DistributedAppWithState<WorldState> {
         quad.draw();
     }
     else if (state().currentScene == 2) { // STARS (Two Passes)
-        int nextTex = (currentTex + 1) % 2; 
-        fbo.bind(); 
+        int nextTex = (currentTex + 1) % 2;
+        fbo.bind();
         fbo.attachTexture2D(tex[nextTex]); 
         starsBufferAShader->use();
         starsBufferAShader->uniform("iResolution", (float)fbWidth(), (float)fbHeight(), (float)width() / (float)height());
@@ -461,6 +488,9 @@ struct AlloApp : DistributedAppWithState<WorldState> {
         starsImageShader->uniform("texMain", 0);
         quad.draw();
         tex[currentTex].unbind(0);
+
+
+        //glcheck();
     }
     else if (state().currentScene == 4) { // DOOR CLOSE
         doorCloseShader->use();
