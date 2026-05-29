@@ -5,6 +5,7 @@
 #include "al/app/al_GUIDomain.hpp"
 #include "al/graphics/al_VAOMesh.hpp"
 #include "al/io/al_File.hpp"
+#include "al_ext/statedistribution/al_CuttleboneStateSimulationDomain.hpp"
 #include <fstream>
 
 using namespace al;
@@ -46,6 +47,14 @@ struct AlloApp : DistributedAppWithState<WorldState> {
 
   void onInit() override
   {
+    auto cuttleboneDomain =
+        CuttleboneStateSimulationDomain<WorldState>::enableCuttlebone(this);
+    if (!cuttleboneDomain) {
+      std::cerr << "ERROR: Could not start Cuttlebone. Quitting." << std::endl;
+      quit();
+    }
+    
+    if(isPrimary()) {
     auto GUIdomain = GUIDomain::enableGUI(defaultWindowDomain());
     auto &gui = GUIdomain->newGUI();
     gui.add(RayMarch);
@@ -55,6 +64,9 @@ struct AlloApp : DistributedAppWithState<WorldState> {
     gui.add(waterdepth);
     gui.add(phase);
     gui.add(dragMult);
+  }
+
+  parameterServer() << camera << mouseX << mouseY << RayMarch << Normal << speed << weight << waterdepth << phase << dragMult;
   }
 
   void onCreate() override {
@@ -77,13 +89,15 @@ struct AlloApp : DistributedAppWithState<WorldState> {
 
     state().time = 0.f;
 
-    parameterServer() << camera << mouseX << mouseY << RayMarch << Normal << speed << weight << waterdepth << phase << dragMult;
   }
 
   double t = 0;
   void onAnimate(double dt) override {
     if(isPrimary()) {
       state().time += dt;
+      camera.set(nav());
+    } else {
+      nav().set(camera.get());
     }
     
     t += dt;
@@ -124,8 +138,10 @@ struct AlloApp : DistributedAppWithState<WorldState> {
   }
 
   bool onMouseMove(const Mouse &m) override {
+  if(isPrimary()) {  
     mouseX = m.x();
     mouseY = m.y();
+  }  
     return true;
   }
 

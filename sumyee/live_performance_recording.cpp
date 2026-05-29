@@ -25,7 +25,7 @@ case GL_STACK_OVERFLOW:       return "This command would cause a stack overflow.
 case GL_STACK_UNDERFLOW:      return "This command would cause a stack underflow.  The offending command is ignored, and has no other side effect than to set the error flag.\n";
 case GL_OUT_OF_MEMORY:        return "There is not enough memory left to execute the command.  The state of the GL is undefined, except for the state of the error flags, after this error is recorded.\n";
 //case GL_TABLE_TOO_LARGE:      return "The specified table exceeds the implementation's maximum supported table size.  The offending command is ignored, and has no other side effect than to set the error flag.\n";
-default:
+default: return "\n";
 }
 return "\n";
 }
