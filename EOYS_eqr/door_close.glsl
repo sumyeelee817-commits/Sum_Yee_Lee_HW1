@@ -51,14 +51,22 @@ void main() {
   vec3 rd = normalize(rayDir);
 
     // --- ANIMATION TIMERS ---
-    // 1. REVERSED: Starts at PI (open), smoothly closes to 0 between 1.0s and 3.0s
-    float rad = (1.0f - smoothstep(1.0f, 3.0f, iTime)) * PI; 
+     // 1. PHASED CLOSING: Starts at PI, pauses at 20 degrees, then finishes closing.
+    float targetPauseAngle = 30.0f * PI / 180.0f; // 20 degrees in radians
+    
+    // Phase 1: Close from fully open down to 20 degrees (between 1.0s and 4.0s)
+    float drop1 = (PI - targetPauseAngle) * smoothstep(0.5f, 2.5f, iTime); 
+    
+    // Phase 2: Close the final 20 degrees down to 0 (between 5.0s and 7.0s)
+    float drop2 = targetPauseAngle * smoothstep(5.0f, 7.0f, iTime);        
+    
+    float rad = PI - drop1 - drop2; 
     
     // 2. Smoke kicks in right as the door finishes closing
-    float smokeIntensity = smoothstep(2.5f, 4.0f, iTime);
+    float smokeIntensity = smoothstep(5.5f, 4.70f, iTime);
 
     // 3. Fades the ENTIRE SCENE to black between 3.0s and 4.5s
-    float globalFade = 1.0f - smoothstep(3.0f, 4.5f, iTime);
+    float globalFade = 1.0f - smoothstep(5.0f, 6.0f, iTime);
 
     // --- 1. THE VOID BACKGROUND ---
     float depthGlow = max(0.0f, rd.y * 0.5f + 0.5f);

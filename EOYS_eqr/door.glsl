@@ -51,13 +51,13 @@ void main() {
 
     // --- ANIMATION TIMERS ---
     // 1. Opens smoothly once between 1.0s and 3.0s
-  float rad = smoothstep(1.0, 3.0, iTime) * PI; 
+  float rad = smoothstep(1.0, 5.0, iTime) * PI; 
 
     // 2. Smoke kicks in right as the door finishes opening
   float smokeIntensity = smoothstep(2.5, 4.0, iTime);
 
     // 3. Fades the ENTIRE SCENE to black between 3.0s and 4.5s
-  float globalFade = 1.0 - smoothstep(3.0, 4.5, iTime);
+  float globalFade = 1.0 - smoothstep(6.0, 10.0, iTime);
 
     // --- 1. THE VOID BACKGROUND ---
   float depthGlow = max(0.0, rd.y * 0.5 + 0.5);

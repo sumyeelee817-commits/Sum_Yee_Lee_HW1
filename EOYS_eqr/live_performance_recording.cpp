@@ -10,6 +10,7 @@
 #include "al/graphics/al_Shader.hpp"
 #include "al/graphics/al_VAOMesh.hpp"
 #include "al/io/al_File.hpp"
+#include "al/ui/al_PresetHandler.hpp"
 #include "al_ext/statedistribution/al_CuttleboneStateSimulationDomain.hpp"
 
 #undef near
@@ -24,6 +25,7 @@ struct FrameData {
   // Your GUI Parameters
   float speed, waterdepth, phase, dragMult, weight, iterations, iterations2,
       normal;
+  float pitch, yaw;
 };
 
 using namespace al;
@@ -54,6 +56,9 @@ struct AlloApp : DistributedAppWithState<WorldState> {
   Parameter waterdepth{"waterdepth", "", 2.1, 0.1, 10.0};
   Parameter phase{"phase", "", 6.0, 0.0, 20.0};
   Parameter dragMult{"dragMult", "", 0.048, 0.0, 0.2};
+  Parameter camPitch{"camPitch", "", 0.0, -180.0, 180.0};  // Look up/down (-90 to 90 degrees)
+  Parameter camYaw{"camYaw", "", 0.0, -180.0, 180.0};    // Look left/right (-180 to 180 degrees)
+  al::PresetHandler presetHandler{"presets", true};
 
   // --- FLIGHT RECORDER VARIABLES ---
   std::vector<FrameData> flightPath;
@@ -96,7 +101,8 @@ struct AlloApp : DistributedAppWithState<WorldState> {
            << frame.speed << " " << frame.waterdepth << " " << frame.phase
            << " " << frame.dragMult << " " << frame.weight << " "
            << frame.iterations << " " << frame.iterations2 << " "
-           << frame.normal << "\n";
+           << frame.normal << " "
+           << frame.pitch << " " << frame.yaw << "\n";
     }
     std::cout << ">>> Saved " << flightPath.size()
               << " frames to performance_data.txt\n";
@@ -176,10 +182,30 @@ struct AlloApp : DistributedAppWithState<WorldState> {
       gui.add(waterdepth);
       gui.add(phase);
       gui.add(dragMult);
+      gui.add(camPitch);
+      gui.add(camYaw);
+      gui.add(presetHandler);
     }
     parameterServer() << camera << iterations << iterations2 << Normal << speed
-                      << weight << waterdepth << phase << dragMult;
+                      << weight << waterdepth << phase << dragMult << camPitch << camYaw;
+
+    presetHandler << camPitch << camYaw;
+    auto updateCameraRotation = [this](float /*value*/) {
+        double pitchRad = camPitch.get() * M_PI / 180.0;
+        double yawRad   = camYaw.get() * M_PI / 180.0;
+        
+        al::Quatd qP, qY;
+        qP.fromAxisAngle(pitchRad, 1, 0, 0);
+        qY.fromAxisAngle(yawRad, 0, 1, 0);
+        
+        nav().quat() = qY * qP;
+    };
+
+    // Attach the function to the sliders
+    camPitch.registerChangeCallback(updateCameraRotation);
+    camYaw.registerChangeCallback(updateCameraRotation);
   }
+    
 
   void onCreate() override
   {
@@ -230,6 +256,13 @@ struct AlloApp : DistributedAppWithState<WorldState> {
   void onAnimate(double dt) override
   {
     if (isPrimary()) {
+
+      static int audioFrameCounter = 0;
+      audioFrameCounter++;
+      if (audioFrameCounter % 60 == 0) { 
+          double audioSeconds = player.pos() / player.frameRate();
+          std::cout << ">>> Current Audio Time: " << audioSeconds << " seconds\n";
+      }
       state().time += dt;
 
       if (isPlaying && flightPath.size() > 0) {
@@ -241,8 +274,8 @@ struct AlloApp : DistributedAppWithState<WorldState> {
         }
 
         FrameData f = flightPath[playbackIndex];
-        // nav().pos() = f.pos;
-        // nav().quat() = f.quat;
+        nav().pos() = f.pos;
+        nav().quat() = f.quat;
 
         if (state().currentScene != f.scene) {
           state().currentScene = f.scene;
